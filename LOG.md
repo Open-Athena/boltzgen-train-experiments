@@ -21,5 +21,16 @@ pip install -e ~/boltzgen
 Training using existing codebase, no distillation data, initialized from pretrained boltz-2
 
 ```
-time python src/boltzgen/resources/main.py src/boltzgen/resources/config/train/boltzgen.no_distillation.yaml name=vanilla-pretrained-1 wandb.entity=open-athena wandb.project=boltzgen-train-experiments wandb.group=vanilla trainer.devices=8 pretrained=training_data/boltz2_fold.ckpt slurm=false trainer.samples_per_epoch=20000
+time python src/boltzgen/resources/main.py \
+    src/boltzgen/resources/config/train/boltzgen.no_distillation.yaml \
+    name=vanilla-pretrained-1 \
+    wandb.entity=open-athena \
+    wandb.project=boltzgen-train-experiments \
+    wandb.group=vanilla \
+    trainer.devices=8 \
+    pretrained=training_data/boltz2_fold.ckpt \
+    slurm=false \
+    data.samples_per_epoch=20000
 ```
+Runs:
+* https://wandb.ai/open-athena/boltzgen-train-experiments/runs/ozldg4u7
