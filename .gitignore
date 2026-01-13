@@ -1,21 +1,3 @@
-scripts/bindcraft/utils.py
-.tmp_wandb
-*.ipynb
-!filter.ipynb
-!similarity.ipynb
-cache
-results
-workdir
-workbench
-.vscode/
-wandb
-tmp
-slurm_out
-small_data
-.idea
-*.pkl
-*.out
-.DS_Store
 
 # Development files
 .vscode

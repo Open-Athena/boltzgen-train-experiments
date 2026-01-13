@@ -3,9 +3,10 @@ import os
 import warnings
 from pathlib import Path
 import time
-from typing import Optional
+from typing import List, Optional
 import pytorch_lightning as pl
 import torch
+from torch import nn
 from omegaconf import OmegaConf, listconfig
 from pytorch_lightning import LightningModule
 from pytorch_lightning.callbacks.model_checkpoint import ModelCheckpoint
@@ -40,6 +41,7 @@ class Training(Task):
         debug: bool = False,
         strict_loading: bool = True,
         metric_mode: str = "max",
+        drop_pairformer_layers: Optional[List[int]] = None,
     ) -> None:
         """Initialize training configuration.
 
@@ -87,6 +89,54 @@ class Training(Task):
         self.debug = debug
         self.strict_loading = strict_loading
         self.metric_mode = metric_mode
+        self.drop_pairformer_layers = drop_pairformer_layers
+
+    def _drop_pairformer_layers(
+        self, model: LightningModule, layers_to_drop: List[int]
+    ) -> LightningModule:
+        """Drop specified pairformer layers from the model.
+
+        Parameters
+        ----------
+        model : LightningModule
+            The model to modify.
+        layers_to_drop : List[int]
+            List of layer indices to drop (0-indexed).
+
+        Returns
+        -------
+        LightningModule
+            The model with specified layers removed.
+        """
+        if not hasattr(model, "pairformer_module"):
+            raise ValueError("Model does not have a pairformer_module")
+
+        pairformer = model.pairformer_module
+        original_num_layers = len(pairformer.layers)
+
+        # Validate layer indices
+        for idx in layers_to_drop:
+            if idx < 0 or idx >= original_num_layers:
+                raise ValueError(
+                    f"Invalid layer index {idx}. "
+                    f"Model has {original_num_layers} pairformer layers (0-{original_num_layers - 1})"
+                )
+
+        # Create new layer list without dropped layers
+        layers_to_keep = [
+            i for i in range(original_num_layers) if i not in layers_to_drop
+        ]
+        new_layers = nn.ModuleList([pairformer.layers[i] for i in layers_to_keep])
+
+        # Replace the layers
+        pairformer.layers = new_layers
+        pairformer.num_blocks = len(new_layers)
+
+        print(f"Dropped pairformer layers: {sorted(layers_to_drop)}")
+        print(f"Pairformer layers: {original_num_layers} -> {len(new_layers)}")
+        print(f"Remaining layers (original indices): {layers_to_keep}")
+
+        return model
 
     def run(self, config: OmegaConf) -> None:
         """Run training.
@@ -142,6 +192,12 @@ class Training(Task):
             model_module = type(model_module).load_from_checkpoint(
                 file_path, map_location="cpu", strict=False, weights_only=False, **(model_module.hparams)
             )
+
+            # Drop pairformer layers if specified
+            if self.drop_pairformer_layers:
+                model_module = self._drop_pairformer_layers(
+                    model_module, self.drop_pairformer_layers
+                )
 
         # Create checkpoint callback
         callbacks = self.trainer.get("callbacks", [])
