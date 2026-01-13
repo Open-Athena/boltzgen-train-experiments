@@ -42,6 +42,7 @@ class Training(Task):
         strict_loading: bool = True,
         metric_mode: str = "max",
         drop_pairformer_layers: Optional[List[int]] = None,
+        validate_before_training: bool = False,
     ) -> None:
         """Initialize training configuration.
 
@@ -90,6 +91,7 @@ class Training(Task):
         self.strict_loading = strict_loading
         self.metric_mode = metric_mode
         self.drop_pairformer_layers = drop_pairformer_layers
+        self.validate_before_training = validate_before_training
 
     def _drop_pairformer_layers(
         self, model: LightningModule, layers_to_drop: List[int]
@@ -299,6 +301,13 @@ class Training(Task):
                 ckpt_path=ckpt_path,
             )
         else:
+            if self.validate_before_training:
+                print("Running validation before training...")
+                trainer.validate(
+                    model_module,
+                    datamodule=data_module,
+                    ckpt_path=ckpt_path,
+                )
             trainer.fit(
                 model_module,
                 datamodule=data_module,
