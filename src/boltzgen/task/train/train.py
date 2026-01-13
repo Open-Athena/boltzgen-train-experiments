@@ -42,6 +42,7 @@ class Training(Task):
         strict_loading: bool = True,
         metric_mode: str = "max",
         drop_pairformer_layers: Optional[List[int]] = None,
+        validate_before_layer_drop: bool = False,
         validate_before_training: bool = False,
     ) -> None:
         """Initialize training configuration.
@@ -91,7 +92,28 @@ class Training(Task):
         self.strict_loading = strict_loading
         self.metric_mode = metric_mode
         self.drop_pairformer_layers = drop_pairformer_layers
+        self.validate_before_layer_drop = validate_before_layer_drop
         self.validate_before_training = validate_before_training
+
+    def _relog_metrics_with_prefix(
+        self, trainer: pl.Trainer, prefix: str
+    ) -> None:
+        """Re-log validation metrics with a prefix for clarity in wandb.
+
+        Parameters
+        ----------
+        trainer : pl.Trainer
+            The trainer with logged metrics.
+        prefix : str
+            Prefix to add to metric names (e.g., "original/" or "pruned/").
+        """
+        metrics = trainer.callback_metrics
+        prefixed_metrics = {f"{prefix}{k}": v.item() if hasattr(v, 'item') else v
+                           for k, v in metrics.items()}
+
+        for logger in trainer.loggers:
+            if hasattr(logger, 'log_metrics'):
+                logger.log_metrics(prefixed_metrics, step=0)
 
     def _drop_pairformer_layers(
         self, model: LightningModule, layers_to_drop: List[int]
@@ -194,12 +216,7 @@ class Training(Task):
             model_module = type(model_module).load_from_checkpoint(
                 file_path, map_location="cpu", strict=False, weights_only=False, **(model_module.hparams)
             )
-
-            # Drop pairformer layers if specified
-            if self.drop_pairformer_layers:
-                model_module = self._drop_pairformer_layers(
-                    model_module, self.drop_pairformer_layers
-                )
+            # Note: layer dropping is done after trainer setup to allow validation before drop
 
         # Create checkpoint callback
         callbacks = self.trainer.get("callbacks", [])
@@ -301,13 +318,32 @@ class Training(Task):
                 ckpt_path=ckpt_path,
             )
         else:
-            if self.validate_before_training:
-                print("Running validation before training...")
+            # Validate before layer drop (original model) - only for fresh pretrained, not resume
+            if self.validate_before_layer_drop and self.drop_pairformer_layers and self.pretrained and not ckpt_path:
+                print("Running validation BEFORE layer drop (original model)...")
                 trainer.validate(
                     model_module,
                     datamodule=data_module,
-                    ckpt_path=ckpt_path,
                 )
+                # Re-log metrics with "original/" prefix for clarity in wandb
+                self._relog_metrics_with_prefix(trainer, "original/")
+
+            # Drop pairformer layers if specified
+            if self.drop_pairformer_layers:
+                model_module = self._drop_pairformer_layers(
+                    model_module, self.drop_pairformer_layers
+                )
+
+            # Validate after layer drop (pruned model)
+            if self.validate_before_training:
+                print("Running validation AFTER layer drop (before training)...")
+                trainer.validate(
+                    model_module,
+                    datamodule=data_module,
+                )
+                # Re-log metrics with "pruned/" prefix for clarity in wandb
+                self._relog_metrics_with_prefix(trainer, "pruned/")
+
             trainer.fit(
                 model_module,
                 datamodule=data_module,
