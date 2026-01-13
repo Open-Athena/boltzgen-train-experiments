@@ -68,4 +68,4 @@ time python src/boltzgen/resources/main.py \
     data.samples_per_epoch=20000
 ```
 Runs:
-* (pending)
+* https://wandb.ai/open-athena/boltzgen-train-experiments/runs/jwiomtwb
